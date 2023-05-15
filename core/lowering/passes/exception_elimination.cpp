@@ -27,69 +27,47 @@ struct ExceptionOrPassPatternElimination {
 
  private:
   bool isExceptionOrPassNode(Node* n) {
-    if (n->blocks().size() != 2) {
-      return false;
-    }
-    auto arm1 = n->blocks()[0];
-    auto arm2 = n->blocks()[1];
-    if (arm1->outputs().size() != 0 || arm2->outputs().size() != 0) {
-      // Make sure that the node doesn't actually produce any Value that are
-      // used by other nodes
+    if (!(n->kind() == prim::If && n->blocks().size() == 2)) {
       return false;
     }
 
-    auto arm1_start = arm1->nodes().begin();
-    auto arm2_start = arm2->nodes().begin();
+    // Make sure that the node doesn't actually produce any Value that are
+    // used by other nodes
+    if (n->outputs().size() != 0)
+      return false;
 
-    bool arm1_starts_with_exception = (*arm1_start)->kind() == prim::RaiseException;
-    bool arm2_starts_with_exception = (*arm2_start)->kind() == prim::RaiseException;
+    const auto arm1 = n->blocks()[0];
+    const auto arm2 = n->blocks()[1];
 
-    // if (!arm1_starts_with_exception && !arm2_starts_with_exception) {
-    // Neither arm matches the pattern
-    //   return false;
-    //}
+    auto arm1_last = arm1->nodes().rbegin();
+    auto arm2_last = arm2->nodes().rbegin();
 
-    /// Check if this Node hosts a pattern like so:
-    ///  = prim::If(%5958)
-    ///   block0():
-    ///     = prim::RaiseException(%45)
-    ///    -> ()
-    ///   block1():
-    ///    -> ()
-    if (arm1_starts_with_exception) {
-      if ((*(++arm1_start))->kind() == prim::Return) {
-        // Make sure that block0 is solely just the exception and the return
-        if ((*(arm2_start))->kind() == prim::Return) {
-          // Make sure that block1 is solely the return
-          return true;
-        }
-      }
+    const bool arm1_ends_with_exception = (*arm1_last)->kind() == prim::RaiseException;
+    const bool next_arm1_ends_with_return = (*std::next(arm1_last))->kind() == prim::Return;
+
+    const bool arm2_ends_with_exception = (*arm2_last)->kind() == prim::RaiseException;
+    const bool next_arm2_ends_with_return = (*std::next(arm2_last))->kind() == prim::Return;
+
+    if (!arm1_ends_with_exception && !arm2_ends_with_exception) {
+      // Neither arm matches the pattern
+      return false;
     }
 
-    /// Check if this Node hosts a pattern like so:
-    ///  = prim::If(%5958)
-    ///   block0():
-    ///    -> ()
-    ///   block1():
-    ///     = prim::RaiseException(%45)
-    ///    -> ()
-    if (arm2_starts_with_exception) {
-      if ((*(++arm2_start))->kind() == prim::Return) {
-        // Make sure that block1 is solely just the exception and the return
-        if ((*(arm1_start))->kind() == prim::Return) {
-          // Make sure that block0 is solely the return
-          return true;
-        }
-      }
+    // Check that the arm that does not raise also does not contain any computation, but basically
+    // just a prim::Return
+    if (arm1_ends_with_exception && !next_arm2_ends_with_return) {
+      return false;
+    } else if (arm2_ends_with_exception && !next_arm1_ends_with_return) {
+      return false;
     }
 
-    return false;
+    return true;
   }
 
   void findExceptionOrPassNodes(Block* b) {
     for (auto it = b->nodes().begin(); it != b->nodes().end(); it++) {
       auto n = *it;
-      if (n->kind() == prim::If && isExceptionOrPassNode(n)) {
+      if (isExceptionOrPassNode(n)) {
         LOG_GRAPH("Found that node " << *n << "  is an exception or pass node (EliminateChecks)" << std::endl);
         it.destroyCurrent();
       }

@@ -106,6 +106,7 @@ void LowerGraph(std::shared_ptr<torch::jit::Graph>& g, std::vector<torch::jit::I
   torch::jit::PeepholeOptimize(g, false);
   torch::jit::FuseLinear(g);
   torch::jit::EliminateExceptions(g);
+  passes::EliminateExceptionOrPassPattern(g);
   if (!lower_info.disable_cse) {
     torch::jit::EliminateCommonSubexpression(g);
   }
@@ -115,7 +116,6 @@ void LowerGraph(std::shared_ptr<torch::jit::Graph>& g, std::vector<torch::jit::I
   }
   passes::UnpackHardSwish(g);
   passes::UnpackHardSigmoid(g);
-  passes::EliminateExceptionOrPassPattern(g);
   passes::ReduceToOperation(g);
   passes::ReduceGelu(g);
   passes::ReduceRemainder(g);
